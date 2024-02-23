@@ -8,45 +8,87 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 
+# class Generator(nn.Module):
+
+#     def __init__(self, latent_dim, num_feature_maps, channels=3):
+#         super().__init__()
+
+#         self.latent_dim = latent_dim
+#         self.num_feature_maps = num_feature_maps
+#         self.channels = channels
+#         self.model = nn.Sequential(
+#             nn.ConvTranspose2d(latent_dim, num_feature_maps*8,
+#                                kernel_size=4, stride=1, padding=0,
+#                                bias=False),
+#             nn.BatchNorm2d(num_feature_maps*8),
+#             nn.LeakyReLU(inplace=True),
+#             nn.ConvTranspose2d(num_feature_maps*8, num_feature_maps*4,
+#                                kernel_size=4, stride=2, padding=1,
+#                                bias=False),
+#             nn.BatchNorm2d(num_feature_maps*4),
+#             nn.LeakyReLU(inplace=True),
+#             nn.ConvTranspose2d(num_feature_maps*4, num_feature_maps*2,
+#                                kernel_size=4, stride=2, padding=1,
+#                                bias=False),
+#             nn.BatchNorm2d(num_feature_maps*2),
+#             nn.LeakyReLU(inplace=True),
+#             nn.ConvTranspose2d(num_feature_maps*2, num_feature_maps,
+#                                kernel_size=4, stride=2, padding=1,
+#                                bias=False),
+#             nn.BatchNorm2d(num_feature_maps),
+#             nn.LeakyReLU(inplace=True),
+#             nn.ConvTranspose2d(num_feature_maps, channels,
+#                                kernel_size=4, stride=2, padding=1,
+#                                bias=False),
+#             nn.Tanh()
+#         )
+
+#     def forward(self, noise):
+#         img = self.model(noise)
+#         return img
+
 class Generator(nn.Module):
 
-    def __init__(self, latent_dim, num_feature_maps, channels=3):
+    def __init__(self, latent_dim, image_size, num_feature_maps, channels=3):
         super().__init__()
 
         self.latent_dim = latent_dim
         self.num_feature_maps = num_feature_maps
         self.channels = channels
-        self.model = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim, num_feature_maps*8,
-                               kernel_size=4, stride=1, padding=0,
-                               bias=False),
-            nn.BatchNorm2d(num_feature_maps*8),
-            nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(num_feature_maps*8, num_feature_maps*4,
-                               kernel_size=4, stride=2, padding=1,
-                               bias=False),
-            nn.BatchNorm2d(num_feature_maps*4),
-            nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(num_feature_maps*4, num_feature_maps*2,
-                               kernel_size=4, stride=2, padding=1,
-                               bias=False),
+        self.init_size = image_size // 16
+        self.linear = nn.Sequential(
+            nn.Linear(latent_dim, (self.num_feature_maps * 2) * self.init_size ** 2)
+        )
+        self.conv_blocks = nn.Sequential(
             nn.BatchNorm2d(num_feature_maps*2),
+            nn.Upsample(scale_factor=2),
             nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(num_feature_maps*2, num_feature_maps,
-                               kernel_size=4, stride=2, padding=1,
-                               bias=False),
+            nn.Conv2d(num_feature_maps*2, num_feature_maps*4,
+                               kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(num_feature_maps*4),
+            nn.Upsample(scale_factor=2),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(num_feature_maps*4, num_feature_maps*2,
+                               kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(num_feature_maps*2),
+            nn.Upsample(scale_factor=2),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(num_feature_maps*2, num_feature_maps,
+                               kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(num_feature_maps),
+            nn.Upsample(scale_factor=2),
             nn.LeakyReLU(inplace=True),
-            nn.ConvTranspose2d(num_feature_maps, channels,
-                               kernel_size=4, stride=2, padding=1,
-                               bias=False),
+            nn.Conv2d(num_feature_maps, channels,
+                               kernel_size=3, stride=1, padding=1),
             nn.Tanh()
         )
 
     def forward(self, noise):
-        img = self.model(noise)
+        x = self.linear(noise)
+        x = x.view(x.shape[0], (self.num_feature_maps * 2), self.init_size, self.init_size)
+        img = self.conv_blocks(x)
         return img
-
+ 
 
 class Discriminator(nn.Module):
 
@@ -184,7 +226,7 @@ def train(config):
         )
     writer = SummaryWriter()
     custom_transforms = torchvision.transforms.Compose([
-        torchvision.transforms.CenterCrop((160,160)),
+        # torchvision.transforms.CenterCrop((160,160)),
         torchvision.transforms.Resize([config["image_height"], config["image_width"]]),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5,), (0.5,)) ## For MNIST
@@ -197,7 +239,7 @@ def train(config):
         test_transforms=custom_transforms,
     )
 
-    generator = Generator(latent_dim=100, num_feature_maps=64, channels=1)
+    generator = Generator(latent_dim=100, image_size=config["image_height"], num_feature_maps=64, channels=1)
     discriminator = Discriminator(num_feature_maps=64, channels=1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -227,7 +269,7 @@ def train(config):
             real_images = images.to(device)
             real_labels = torch.ones(batch_size, device=device)
 
-            noise = torch.randn(batch_size, latent_dim, 1, 1, device=device)
+            noise = torch.randn(batch_size, latent_dim, device=device)
             fake_images = generator.forward(noise)
             fake_labels = torch.zeros(batch_size, device=device)
 
