@@ -258,7 +258,7 @@ def train(config):
 
     latent_dim = 100
     loss_func = F.binary_cross_entropy_with_logits
-    fixed_noise = torch.randn(64, latent_dim, 1, 1, device=device)
+    fixed_noise = torch.randn(64, latent_dim, device=device)
     global_step = 0
     for epoch in range(config["num_epochs"]):
         generator.train()
