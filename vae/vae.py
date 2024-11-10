@@ -1,5 +1,6 @@
 import wandb
 import torch
+import torchvision
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F 
@@ -145,14 +146,15 @@ class VAE(nn.Module):
 def log_reconstructions(model, data, epoch, num_images=8):
     model.eval()
     with torch.no_grad():
-        recon_batch, _, _ = model(data[:num_images])
+        images = data[:num_images].cuda()
+        recon_batch, _, _ = model(images)
         recon_batch = recon_batch.view(-1, 3, 64, 64)
         comparision = torch.cat([
-            data[:num_images],
+            images,
             recon_batch
         ])
 
-        grid = torchvision.utils.make_grid(comparison, nrow=num_images, normalize=True)
+        grid = torchvision.utils.make_grid(comparision, nrow=num_images, normalize=True)
         images = wandb.Image(
             grid.cpu(),
             caption=f'Epoch {epoch}: Top: Original, Bottom: Reconstructed'
@@ -169,7 +171,7 @@ def train(folder_path):
     batch_size = 32
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataloader = get_image_dataloader(folder_path)
+    dataloader = get_image_dataloader(folder_path, batch_size=batch_size)
     model = VAE(latent_dim=latent_dim, batch_size=batch_size).to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     x = next(iter(dataloader))
