@@ -145,7 +145,7 @@ class VAE(nn.Module):
 def log_reconstructions(model, data, epoch, num_images=8):
     model.eval()
     with torch.no_grad():
-        recon_batch, _, _ = model(x[:num_images])
+        recon_batch, _, _ = model(data[:num_images])
         recon_batch = recon_batch.view(-1, 3, 64, 64)
         comparision = torch.cat([
             data[:num_images],
